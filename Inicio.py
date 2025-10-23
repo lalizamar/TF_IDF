@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-# TF-IDF QA — Estaciones & Clima Edition
-# Requisitos: streamlit, scikit-learn, pandas, nltk
-# (NLTK: usa SnowballStemmer inglés, no precisa descargar corpora)
-
+# TF-IDF QA — Estaciones & Clima Edition (fix IndentationError + session_state)
 import re
 import io
 import pandas as pd
@@ -12,10 +9,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.stem import SnowballStemmer
 
-# ------------------------ Config básica ------------------------
 st.set_page_config(page_title="TF-IDF QA — Estaciones", page_icon="🌦️", layout="centered")
 
-# Paletas por estación
 SEASONS = {
     "Primavera 🌸": {
         "bg1": "#fff7fb", "bg2": "#eafff5",
@@ -75,7 +70,6 @@ with st.sidebar:
     season = st.selectbox("Elige el tema", list(SEASONS.keys()), index=0)
 S = SEASONS[season]
 
-# Estilos que sí aplican a Streamlit
 st.markdown(f"""
 <style>
 [data-testid="stAppViewContainer"] {{
@@ -104,14 +98,11 @@ div.stButton>button:hover {{ transform: translateY(-1px); filter: brightness(1.0
 .stTextArea textarea, .stTextInput input, .stSelectbox [data-baseweb="select"]>div {{
   border-radius:14px !important; border:2px solid {S['accent2']} !important;
 }}
-.progress {{
-  width:100%; height:12px; border-radius:999px; background:#eee; overflow:hidden; border:2px solid {S['accent2']};
-}}
+.progress {{ width:100%; height:12px; border-radius:999px; background:#eee; overflow:hidden; border:2px solid {S['accent2']}; }}
 .fill {{ height:100%; background:{S['accent']}; transition:width .4s ease; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------------ Cabecera ------------------------
 st.markdown(f"""
 <div class="card" style="display:flex;gap:16px;align-items:center">
   <div>{S['svg']}</div>
@@ -129,14 +120,12 @@ Cada línea se trata como un **documento** (frase, párrafo o texto largo).
 ⚠️ **Trabajamos en inglés** (el *stemming* y las stopwords están configuradas para ese idioma).
 """)
 
-# ------------------------ Controles extra ------------------------
 with st.expander("⚙️ Opciones avanzadas"):
     use_stem = st.toggle("Usar stemming Snowball (recommended)", value=True)
     ngram_max = st.selectbox("n-gramas (máx)", [1, 2], index=0)
     norm_lower = st.toggle("Normalizar a minúsculas", value=True)
     show_top_terms = st.toggle("Mostrar Top TF-IDF del documento más relevante", value=True)
 
-# Sugerencias estacionales de pregunta
 SUGGESTIONS = {
     "Primavera 🌸": ["What blooms?", "Who is planting?", "Which park has flowers?"],
     "Verano ☀️": ["Who is swimming?", "Where is the beach party?", "Who plays outside?"],
@@ -144,23 +133,23 @@ SUGGESTIONS = {
     "Invierno ❄️": ["Who is skiing?", "Where does it snow?", "Who is playing with snow?"]
 }
 
-# ------------------------ Entrada ------------------------
+# Estado para la pregunta (evita IndentationError y reruns raros)
+if "question_idx" not in st.session_state:
+    st.session_state.question_idx = 0
+
 default_docs = "The dog barks loudly.\nThe cat meows at night.\nThe dog and the cat play together."
 text_input = st.text_area("Escribe tus documentos (uno por línea, en inglés):", default_docs, height=140)
 
-question = st.text_input("Escribe una pregunta (en inglés):", SUGGESTIONS[season][0])
-if st.button("Usar otra sugerencia"):
-    # simplemente rota por la lista
-    q_list = SUGGESTIONS[season]
-    try:
-        i = (q_list.index(question) + 1) % len(q_list)
-    except ValueError:
-        i = 0
-    question = q_list[i]
-    st.session_state["__question__"] = question
-    st.experimental_rerun()
+# muestra la sugerencia actual
+q_list = SUGGESTIONS[season]
+current_q = q_list[st.session_state.question_idx % len(q_list)]
+question = st.text_input("Escribe una pregunta (en inglés):", current_q, key="q_input")
 
-# ------------------------ Prepro + Tokenizer ------------------------
+# Botón para rotar sugerencia (BLOQUE INDENTADO CORRECTO)
+if st.button("Usar otra sugerencia"):
+    st.session_state.question_idx = (st.session_state.question_idx + 1) % len(q_list)
+    st.experimental_set_query_params()  # no hace nada visual, solo fuerza refresco suave
+
 stemmer = SnowballStemmer("english")
 
 def tokenize_and_stem(text: str):
@@ -172,7 +161,6 @@ def tokenize_and_stem(text: str):
         tokens = [stemmer.stem(t) for t in tokens]
     return tokens
 
-# ------------------------ Acción principal ------------------------
 if st.button("Calcular TF-IDF y buscar respuesta"):
     documents = [d.strip() for d in text_input.split("\n") if d.strip()]
     if len(documents) < 1:
@@ -194,7 +182,6 @@ if st.button("Calcular TF-IDF y buscar respuesta"):
         st.markdown("### 📊 Matriz TF-IDF")
         st.dataframe(df_tfidf.round(3), use_container_width=True)
 
-        # Vector de la pregunta + similitud
         question_vec = vectorizer.transform([question])
         similarities = cosine_similarity(question_vec, X).flatten()
         best_idx = similarities.argmax()
@@ -205,12 +192,10 @@ if st.button("Calcular TF-IDF y buscar respuesta"):
         st.write(f"**Tu pregunta:** {question}")
         st.write(f"**Documento más relevante (Doc {best_idx+1}):** {best_doc}")
 
-        # Barra de similitud con color de estación
         pct = max(0.0, min(1.0, best_score))
         st.markdown(f'<div class="progress"><div class="fill" style="width:{pct*100:.1f}%"></div></div>', unsafe_allow_html=True)
         st.write(f"**Puntaje de similitud:** {best_score:.3f}")
 
-        # Ranking de similitudes
         sim_df = pd.DataFrame({
             "Documento": [f"Doc {i+1}" for i in range(len(documents))],
             "Texto": documents,
@@ -219,7 +204,6 @@ if st.button("Calcular TF-IDF y buscar respuesta"):
         st.markdown("### 🧭 Puntajes de similitud (ordenados)")
         st.dataframe(sim_df, use_container_width=True)
 
-        # Stems de la pregunta presentes
         vocab = set(vectorizer.get_feature_names_out())
         q_stems = tokenize_and_stem(question)
         matched = [s for s in q_stems if s in vocab and df_tfidf.iloc[best_idx].get(s, 0) > 0]
@@ -229,21 +213,18 @@ if st.button("Calcular TF-IDF y buscar respuesta"):
         else:
             st.write("_No se hallaron coincidencias directas en el vocabulario._")
 
-        # Top términos del doc ganador
         if show_top_terms:
             row = df_tfidf.iloc[best_idx]
             top_terms = row.sort_values(ascending=False).head(10)
             st.markdown("### 🏅 Top términos TF-IDF del documento ganador")
             st.dataframe(top_terms.reset_index().rename(columns={"index": "Término", best_idx: "TF-IDF"}).round(3))
 
-        # Descarga CSV
         csv = df_tfidf.round(6).to_csv().encode("utf-8")
         st.download_button("⬇️ Descargar matriz TF-IDF (CSV)", data=csv, file_name="tfidf_matrix.csv", mime="text/csv")
 
-        # Efectos según estación + score
         if season == "Invierno ❄️" and best_score >= 0.5:
             st.snow()
         if season == "Verano ☀️" and best_score >= 0.7:
-
+            st.balloons()
 
 
